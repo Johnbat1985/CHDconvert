@@ -243,11 +243,20 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
             set_overall(done, total)
 
         if (replace_originals or delete_archive) and all_succeeded and in_subdir:
+            for f in files:
+                src = os.path.join(file_dir, f)
+                try:
+                    if os.path.exists(src):
+                        os.remove(src)
+                        log(f"Deleted source file: {src}\n")
+                except Exception as e:
+                    log(f"Could not delete {src}: {e}\n")
             try:
-                shutil.rmtree(file_dir)
-                log(f"Deleted source directory: {file_dir}\n")
+                if not os.listdir(file_dir):
+                    os.rmdir(file_dir)
+                    log(f"Removed empty directory: {file_dir}\n")
             except Exception as e:
-                log(f"Could not delete {file_dir}: {e}\n")
+                log(f"Could not remove directory {file_dir}: {e}\n")
 
     set_status(f"Done — {total} item{'s' if total != 1 else ''} processed.")
     log("\nAll done.\n")
