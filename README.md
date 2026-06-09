@@ -82,22 +82,6 @@ By default CHDs are written to a sibling folder named `<input dir>_out`. With **
 
 ---
 
-# CLI Usage
-
-```
-python chdconvert.py [path] [--delete | --replace]
-```
-
-| Argument | Description |
-|---|---|
-| *(none)* | Prompts for a folder path |
-| `path` | Folder containing archives to convert |
-| `--delete` / `-d` | Delete the `_tmp` extraction folder after conversion |
-| `--replace` / `-r` | Delete the original archive and output the CHD back into the input directory |
-
-Output goes to `<folder>_out` by default, or back into the input folder with `--replace`.
-
----
 
 # Shoutouts
 
