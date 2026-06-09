@@ -5,6 +5,7 @@ import shutil
 import threading
 import zipfile
 import tarfile
+from collections import defaultdict
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
 
@@ -90,7 +91,7 @@ def find_loose_files(directory):
 
 
 def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, use_dirname,
-                   log, set_overall, set_file_progress, set_status):
+                   output_dir_override, log, set_overall, set_file_progress, set_status):
 
     all_archives = [(d, f) for d in input_dirs for f in archives_in(d)]
     all_loose = [(d, root, f) for d in input_dirs for root, f in find_loose_files(d)]
@@ -138,17 +139,12 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
 
             ret = 0
             for i_path in extracted_files:
-                i = os.path.basename(i_path)
                 iso_size = os.path.getsize(i_path)
                 log(f"ISO/CUE/BIN size : {fmt_size(iso_size)}\n")
 
-                if replace_originals:
-                    output_dir = input_dir
-                else:
-                    output_dir = input_dir + "_out"
-
+                output_dir = output_dir_override if output_dir_override else input_dir
                 if not os.path.exists(output_dir):
-                    os.mkdir(output_dir)
+                    os.makedirs(output_dir)
 
                 chd_path = os.path.join(output_dir, archive_name + ".chd")
                 cmd = " ".join([
@@ -189,61 +185,69 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
         done += 1
         set_overall(done, total)
 
-    # --- Loose iso/cue/bin files ---
+    # --- Loose iso/cue/bin files (grouped by source directory) ---
+    loose_by_dir = defaultdict(list)
     for input_dir, file_dir, f in all_loose:
-        set_status(f"Processing {done + 1} of {total}: {f}")
-        set_file_progress(0)
-        file_path = os.path.join(file_dir, f)
+        loose_by_dir[(input_dir, file_dir)].append(f)
 
-        try:
-            file_size = os.path.getsize(file_path)
-            label = os.path.relpath(file_dir, input_dir)
-            label = f if label == "." else f"{label}/{f}"
-            log(f"\n--- {label}  [{os.path.basename(input_dir)}] ---\n")
-            log(f"File size    : {fmt_size(file_size)}\n")
+    for (input_dir, file_dir), files in loose_by_dir.items():
+        in_subdir = os.path.normpath(file_dir) != os.path.normpath(input_dir)
+        output_dir = output_dir_override if output_dir_override else file_dir
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-            if replace_originals:
-                output_dir = input_dir
-            else:
-                output_dir = input_dir + "_out"
+        all_succeeded = True
+        for f in files:
+            set_status(f"Processing {done + 1} of {total}: {f}")
+            set_file_progress(0)
+            file_path = os.path.join(file_dir, f)
 
-            if not os.path.exists(output_dir):
-                os.mkdir(output_dir)
+            try:
+                file_size = os.path.getsize(file_path)
+                label = os.path.relpath(file_dir, input_dir)
+                label = f if label == "." else f"{label}/{f}"
+                log(f"\n--- {label}  [{os.path.basename(input_dir)}] ---\n")
+                log(f"File size    : {fmt_size(file_size)}\n")
 
-            in_subdir = os.path.normpath(file_dir) != os.path.normpath(input_dir)
-            chd_name = os.path.basename(file_dir) if use_dirname and in_subdir else f.rsplit(".", 1)[0]
-            chd_path = os.path.join(output_dir, chd_name + ".chd")
-            cmd = " ".join([
-                CHDMAN, "createcd", "-f",
-                "-i", f'"{file_path}"',
-                "-o", f'"{chd_path}"',
-            ])
-            log("Converting to CHD...\n")
-            ret = run_chdman(cmd, on_progress=set_file_progress, on_line=log)
+                chd_name = os.path.basename(file_dir) if use_dirname and in_subdir else f.rsplit(".", 1)[0]
+                chd_path = os.path.join(output_dir, chd_name + ".chd")
+                cmd = " ".join([
+                    CHDMAN, "createcd", "-f",
+                    "-i", f'"{file_path}"',
+                    "-o", f'"{chd_path}"',
+                ])
+                log("Converting to CHD...\n")
+                ret = run_chdman(cmd, on_progress=set_file_progress, on_line=log)
 
-            if ret == 0:
-                chd_size = os.path.getsize(chd_path)
-                ratio = chd_size / file_size * 100 if file_size else 0
-                log(
-                    f"CHD size     : {fmt_size(chd_size)}\n"
-                    f"Ratio        : {ratio:.1f}% of source size"
-                    f"  ({fmt_size(file_size - chd_size)} saved)\n"
-                )
-                if replace_originals or delete_archive:
-                    os.remove(file_path)
-                    log("Deleted original file.\n")
-            else:
-                log(f"chdman failed (exit code {ret}).\n")
+                if ret == 0:
+                    chd_size = os.path.getsize(chd_path)
+                    ratio = chd_size / file_size * 100 if file_size else 0
+                    log(
+                        f"CHD size     : {fmt_size(chd_size)}\n"
+                        f"Ratio        : {ratio:.1f}% of source size"
+                        f"  ({fmt_size(file_size - chd_size)} saved)\n"
+                    )
+                else:
+                    log(f"chdman failed (exit code {ret}).\n")
+                    all_succeeded = False
 
-            set_file_progress(100 if ret == 0 else 0)
+                set_file_progress(100 if ret == 0 else 0)
 
-        except Exception as e:
-            log(f"Error: {e}\n")
-            with open(ERROR_LOG, "a") as f:
-                f.write(f"{f}: {str(e)}\n")
+            except Exception as e:
+                log(f"Error: {e}\n")
+                with open(ERROR_LOG, "a") as ef:
+                    ef.write(f"{f}: {str(e)}\n")
+                all_succeeded = False
 
-        done += 1
-        set_overall(done, total)
+            done += 1
+            set_overall(done, total)
+
+        if (replace_originals or delete_archive) and all_succeeded and in_subdir:
+            try:
+                shutil.rmtree(file_dir)
+                log(f"Deleted source directory: {file_dir}\n")
+            except Exception as e:
+                log(f"Could not delete {file_dir}: {e}\n")
 
     set_status(f"Done — {total} item{'s' if total != 1 else ''} processed.")
     log("\nAll done.\n")
@@ -299,6 +303,24 @@ class App(tk.Tk):
         file_scroll.config(command=self.file_listbox.yview)
         self.file_listbox.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=6)
         file_scroll.pack(side="left", fill="y", padx=(0, 8), pady=6)
+
+        # --- Output directory ---
+        out_frame = ttk.LabelFrame(self, text="Output Directory")
+        out_frame.pack(fill="x", **pad)
+
+        out_row = ttk.Frame(out_frame)
+        out_row.pack(fill="x", padx=8, pady=(6, 2))
+
+        self.out_dir_var = tk.StringVar()
+        self.out_dir_entry = ttk.Entry(out_row, textvariable=self.out_dir_var, font=("Consolas", 9))
+        self.out_dir_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(out_row, text="Browse…", width=8, command=self._browse_out_dir).pack(side="left", padx=(6, 0))
+
+        ttk.Label(
+            out_frame,
+            text="Leave blank to output CHDs alongside the source files.",
+            foreground="gray",
+        ).pack(anchor="w", padx=8, pady=(0, 6))
 
         # --- Options ---
         opt_frame = ttk.LabelFrame(self, text="Options")
@@ -403,14 +425,21 @@ class App(tk.Tk):
             if total else "Files to Convert"
         )
 
+    def _browse_out_dir(self):
+        path = filedialog.askdirectory(title="Select Output Directory")
+        if path:
+            self.out_dir_var.set(path)
+
     def _on_replace_toggle(self):
         if self.replace_var.get():
             self.delete_var.set(True)
             self.chk_delete.state(["disabled"])
             self.chk_delete_archive.state(["disabled"])
+            self.out_dir_entry.state(["disabled"])
         else:
             self.chk_delete.state(["!disabled"])
             self.chk_delete_archive.state(["!disabled"])
+            self.out_dir_entry.state(["!disabled"])
 
     def _log(self, text):
         self.log_box.configure(state="normal")
@@ -447,6 +476,7 @@ class App(tk.Tk):
                 replace_originals=self.replace_var.get(),
                 delete_archive=self.delete_archive_var.get(),
                 use_dirname=self.use_dirname_var.get(),
+                output_dir_override=self.out_dir_var.get().strip() or None,
                 log=lambda msg: self.after(0, self._log, msg),
                 set_overall=lambda v, m: self.after(0, self._set_overall, v, m),
                 set_file_progress=lambda v: self.after(0, self._set_file_progress, v),

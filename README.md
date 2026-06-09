@@ -85,24 +85,17 @@ By default CHDs are written to a sibling folder named `<input dir>_out`. With **
 # CLI Usage
 
 ```
-python chdconvert.py
+python chdconvert.py [path] [--delete | --replace]
 ```
-Prompts for a folder path, extracts all archives found, converts ISO/CUE files to CHD, and outputs to `<folder>_out`.
 
-```
-python chdconvert.py C:\path\to\files
-```
-Same, with the folder provided as an argument.
+| Argument | Description |
+|---|---|
+| *(none)* | Prompts for a folder path |
+| `path` | Folder containing archives to convert |
+| `--delete` / `-d` | Delete the `_tmp` extraction folder after conversion |
+| `--replace` / `-r` | Delete the original archive and output the CHD back into the input directory |
 
-```
-python chdconvert.py C:\path\to\files --delete
-```
-Same as above, also deletes the `_tmp` extraction directory when done.
-
-```
-python chdconvert.py C:\path\to\files --replace
-```
-Deletes the original archive and outputs the CHD back into the input directory, replacing it.
+Output goes to `<folder>_out` by default, or back into the input folder with `--replace`.
 
 ---
 
