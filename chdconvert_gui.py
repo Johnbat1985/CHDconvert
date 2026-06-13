@@ -149,7 +149,7 @@ class App(tk.Tk):
         throttle_row = ttk.Frame(opt_frame)
         throttle_row.pack(anchor="w", padx=8, pady=(2, 2))
 
-        ttk.Label(throttle_row, text="Concurrent jobs:").pack(side="left")
+        ttk.Label(throttle_row, text="Concurrent jobs (ISO/CUE/BIN only):").pack(side="left")
         self.workers_var = tk.IntVar(value=1)
         ttk.Spinbox(throttle_row, from_=1, to=16, width=4,
                     textvariable=self.workers_var).pack(side="left", padx=(4, 16))

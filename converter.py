@@ -115,6 +115,23 @@ def generate_cue_for_bin(bin_path, cue_path):
     return mode
 
 
+def _bins_for_cue(cue_path):
+    """Return existing .bin paths referenced by a single .cue file."""
+    cue_dir = os.path.dirname(cue_path)
+    bins = []
+    try:
+        with open(cue_path, "r", errors="replace") as fh:
+            for line in fh:
+                m = re.match(r'\s*FILE\s+"?([^"]+)"?\s+BINARY', line, re.IGNORECASE)
+                if m:
+                    candidate = os.path.join(cue_dir, m.group(1))
+                    if os.path.exists(candidate):
+                        bins.append(candidate)
+    except OSError:
+        pass
+    return bins
+
+
 def _bins_referenced_by_cues(root, files):
     """Return the set of .bin filenames (lowercase) referenced inside any .cue in this dir."""
     referenced = set()
@@ -265,10 +282,17 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
 
     # --- Per-item workers ---
 
+    # Archives always run one at a time — extraction is disk-bound and running
+    # multiple extractions concurrently thrashes I/O.  Loose-file jobs (direct
+    # chdman, no extraction) still parallelise up to max_workers.
+    archive_sem = threading.Semaphore(1)
+
     def process_archive(input_dir, x):
         archive_path = os.path.join(input_dir, x)
+        archive_sem.acquire()
         slot = acquire_slot()
         if slot < 0:
+            archive_sem.release()
             log(f"Skipping {x} — output drive at capacity.\n")
             if on_job_done: on_job_done(archive_path, "stopped")
             _done_increment()
@@ -393,6 +417,7 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
 
         finally:
             release_slot(slot)
+            archive_sem.release()
             _done_increment()
 
     def process_loose_group(input_dir, file_dir, files):
@@ -501,6 +526,14 @@ def run_conversion(input_dirs, delete_tmp, replace_originals, delete_archive, us
             if (replace_originals or delete_archive) and all_succeeded and in_subdir:
                 for f in files:
                     src = os.path.join(file_dir, f)
+                    # Delete .bin tracks before removing the .cue that names them
+                    if f.lower().endswith(".cue"):
+                        for bin_path in _bins_for_cue(src):
+                            try:
+                                os.remove(bin_path)
+                                log(f"Deleted source file: {bin_path}\n")
+                            except Exception as e:
+                                log(f"Could not delete {bin_path}: {e}\n")
                     try:
                         if os.path.exists(src):
                             os.remove(src)

@@ -91,7 +91,7 @@ Leave the output directory blank to write each CHD alongside its source file. En
 
 | Setting | Description |
 |---|---|
-| Concurrent jobs | Number of files to convert in parallel (1–16) |
+| Concurrent jobs | Number of ISO/CUE/BIN files to convert in parallel (1–16). Archives (.zip/.gz/.7z) always run one at a time to avoid thrashing disk I/O during extraction. |
 | CPU limit % | Pause starting new jobs when system CPU exceeds this threshold (0 = no limit) |
 | Disk write limit MB/s | Pause starting new jobs when disk write speed exceeds this threshold (0 = no limit) |
 | Stop if output drive exceeds % full | Halt all new conversions when the destination drive reaches this fill level (0 = disabled) |
